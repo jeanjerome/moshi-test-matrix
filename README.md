@@ -1,5 +1,30 @@
 # 🧪 Moshi Test Matrix
 
+> ⚠️ **IMPORTANT DISCLAIMER - EXAMPLE PROJECT ONLY** ⚠️
+> 
+> This repository serves as a **proof-of-concept and educational example** only. It will **NOT** be actively developed or maintained for the following critical limitations:
+>
+> ### 💰 **Cost Limitations**
+> - **macOS runners**: Require GitHub Enterprise (not available on free accounts) + expensive billing
+> - **CUDA runners**: Require GitHub Enterprise + GPU-enabled runners (costly)
+> - **Windows runners**: Also billed and not free
+>
+> ### 🚫 **Technical Limitations**
+> - **Act (local testing)**: Cannot simulate macOS or Windows runners (Linux only)
+> - **Platform incompatibility**: Even with act, Linux+CUDA tests cannot run on macOS hardware anyway
+> - **Enterprise dependency**: Most specialized runners require GitHub Enterprise accounts
+>
+> ### 📚 **Purpose**
+> This repository demonstrates:
+> - GitHub Actions matrix strategy design
+> - Multi-platform CI/CD architecture concepts
+> - Workflow isolation techniques
+> - Act local testing setup (with limitations)
+>
+> **No further development is planned.** Use this as a reference for learning GitHub Actions patterns.
+
+---
+
 [![Test Matrix](https://github.com/jeanjerome/moshi-test-matrix/actions/workflows/test-matrix.yml/badge.svg)](https://github.com/jeanjerome/moshi-test-matrix/actions/workflows/test-matrix.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -223,6 +248,57 @@ moshi-test-matrix/
 
 ## 🔍 Troubleshooting
 
+### Act Limitations
+
+⚠️ **Important Constraints**
+- **Act cannot simulate Windows or macOS runners** - Only Linux runners are supported
+- All matrix jobs will run in Linux containers regardless of the `runs-on` specification
+- This means `macos-latest` runners actually execute in Linux with Ubuntu image
+
+### Docker vs Podman with Act
+
+**Docker Desktop (Recommended)**
+```bash
+# Ensure Docker Desktop is running
+docker ps
+
+# Run Act normally
+act -j test --matrix client:rust-metal
+```
+
+**Podman Alternative (Experimental)**
+
+Podman doesn't natively support Act, but you can try running Act inside the Podman VM:
+
+```bash
+# 1. SSH into the Podman machine
+podman machine ssh
+
+# 2. Install Act inside the VM (requires system update)
+sudo rpm-ostree install act
+
+# 3. Reboot the VM to apply the package installation
+systemctl reboot
+
+# 4. SSH back into the machine after reboot
+podman machine ssh
+
+# 5. Run Act from within the Podman VM
+act -j test \
+  --matrix client:rust-metal \
+  --matrix config:config-stt-en-hf.toml \
+  --matrix audio:bria.mp3 \
+  --matrix os:macos-latest
+```
+
+**Command Explanations:**
+- `podman machine ssh` - Connects to the Podman virtual machine
+- `sudo rpm-ostree install act` - Installs Act using the immutable OS package manager
+- `systemctl reboot` - Reboots the VM to activate the new packages
+- Final `act` command - Runs the test from inside the VM environment
+
+⚠️ **Note**: This Podman approach is experimental and may not work reliably.
+
 ### Common Issues
 
 **Act fails with Docker errors**
@@ -232,6 +308,16 @@ docker ps
 
 # Reset Act cache
 rm -rf ~/.cache/act
+
+# For Apple Silicon, ensure correct architecture
+act --container-architecture linux/amd64
+```
+
+**Runner platform issues**
+```bash
+# Force Linux platform for Apple Silicon
+export DOCKER_DEFAULT_PLATFORM=linux/amd64
+act -j test
 ```
 
 **Test timeouts in CI**

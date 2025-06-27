@@ -1,0 +1,473 @@
+name: Moshi Test Matrix
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+env:
+  MOSHI_REPO: "https://github.com/kyutai-labs/moshi.git"
+  DELAYED_STREAMS_REPO: "https://github.com/kyutai-labs/delayed-streams-modeling.git"
+  RESULTS_RETENTION_DAYS: 30
+
+jobs:
+  test:
+    name: ${{ matrix.client }} • ${{ matrix.config }} • ${{ matrix.audio }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Ubuntu runners for CUDA and PyTorch
+          - client: rust-cuda
+            config: config-stt-en_fr-hf.toml
+            audio: bria.mp3
+            os: ubuntu-latest
+          - client: rust-cuda
+            config: config-stt-en_fr-hf.toml
+            audio: sample_fr_hibiki_crepes.mp3
+            os: ubuntu-latest
+          - client: rust-cuda
+            config: config-stt-en-hf.toml
+            audio: bria.mp3
+            os: ubuntu-latest
+          - client: rust-cuda
+            config: config-stt-en-hf.toml
+            audio: sample_fr_hibiki_crepes.mp3
+            os: ubuntu-latest
+          - client: rust-cudnn
+            config: config-stt-en_fr-hf.toml
+            audio: bria.mp3
+            os: ubuntu-latest
+          - client: rust-cudnn
+            config: config-stt-en_fr-hf.toml
+            audio: sample_fr_hibiki_crepes.mp3
+            os: ubuntu-latest
+          - client: rust-cudnn
+            config: config-stt-en-hf.toml
+            audio: bria.mp3
+            os: ubuntu-latest
+          - client: rust-cudnn
+            config: config-stt-en-hf.toml
+            audio: sample_fr_hibiki_crepes.mp3
+            os: ubuntu-latest
+          - client: python-pytorch
+            config: config-stt-en_fr-hf.toml
+            audio: bria.mp3
+            os: ubuntu-latest
+          - client: python-pytorch
+            config: config-stt-en_fr-hf.toml
+            audio: sample_fr_hibiki_crepes.mp3
+            os: ubuntu-latest
+          - client: python-pytorch
+            config: config-stt-en-hf.toml
+            audio: bria.mp3
+            os: ubuntu-latest
+          - client: python-pytorch
+            config: config-stt-en-hf.toml
+            audio: sample_fr_hibiki_crepes.mp3
+            os: ubuntu-latest
+          # macOS runners for Metal and MLX
+          - client: rust-metal
+            config: config-stt-en_fr-hf.toml
+            audio: bria.mp3
+            os: macos-latest
+          - client: rust-metal
+            config: config-stt-en_fr-hf.toml
+            audio: sample_fr_hibiki_crepes.mp3
+            os: macos-latest
+          - client: rust-metal
+            config: config-stt-en-hf.toml
+            audio: bria.mp3
+            os: macos-latest
+          - client: rust-metal
+            config: config-stt-en-hf.toml
+            audio: sample_fr_hibiki_crepes.mp3
+            os: macos-latest
+          - client: python-mlx
+            config: config-stt-en_fr-hf.toml
+            audio: bria.mp3
+            os: macos-latest
+          - client: python-mlx
+            config: config-stt-en_fr-hf.toml
+            audio: sample_fr_hibiki_crepes.mp3
+            os: macos-latest
+          - client: python-mlx
+            config: config-stt-en-hf.toml
+            audio: bria.mp3
+            os: macos-latest
+          - client: python-mlx
+            config: config-stt-en-hf.toml
+            audio: sample_fr_hibiki_crepes.mp3
+            os: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup system dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libssl-dev \
+            cmake \
+            python3-pip \
+            python3-venv \
+            python3-dev
+
+      - name: Setup system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake
+          brew install python@3.11
+
+      - name: Setup Rust toolchain
+        if: startsWith(matrix.client, 'rust-')
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Setup Python
+        if: startsWith(matrix.client, 'python-')
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Clone moshi repository
+        run: |
+          git clone --depth 1 ${{ env.MOSHI_REPO }} /tmp/moshi
+
+      - name: Clone delayed-streams repository
+        run: |
+          git clone --depth 1 ${{ env.DELAYED_STREAMS_REPO }} /tmp/delayed-streams
+
+      - name: Extract configuration
+        run: |
+          mkdir -p configs
+          if [[ -f "/tmp/delayed-streams/configs/${{ matrix.config }}" ]]; then
+            cp "/tmp/delayed-streams/configs/${{ matrix.config }}" configs/
+            echo "✅ Config ${{ matrix.config }} extracted"
+          else
+            echo "❌ Config ${{ matrix.config }} not found"
+            exit 1
+          fi
+
+      - name: Setup Rust client
+        if: startsWith(matrix.client, 'rust-')
+        run: |
+          mkdir -p clients
+          cd /tmp/moshi
+          
+          # Copy Rust sources
+          if [[ -d "client" ]]; then
+            cp -r client/* $GITHUB_WORKSPACE/clients/ 2>/dev/null || true
+          fi
+          if [[ -d "rust" ]]; then
+            cp -r rust/* $GITHUB_WORKSPACE/clients/ 2>/dev/null || true
+          fi
+          if [[ -f "Cargo.toml" ]]; then
+            cp Cargo.toml $GITHUB_WORKSPACE/clients/
+          fi
+
+      - name: Setup Python client
+        if: startsWith(matrix.client, 'python-')
+        run: |
+          mkdir -p clients/python
+          cd /tmp/moshi
+          
+          # Copy Python sources
+          find . -name "*.py" -path "*/client/*" -exec cp {} $GITHUB_WORKSPACE/clients/python/ \; 2>/dev/null || true
+          
+          # Copy moshi_mlx for MLX client
+          if [[ "${{ matrix.client }}" == "python-mlx" && -d "moshi_mlx" ]]; then
+            cp -r moshi_mlx $GITHUB_WORKSPACE/clients/python/
+          fi
+          
+          # Copy Python dependencies
+          for file in requirements.txt setup.py pyproject.toml; do
+            if [[ -f "$file" ]]; then
+              cp "$file" $GITHUB_WORKSPACE/clients/python/
+            fi
+          done
+
+      - name: Cache Rust dependencies
+        if: startsWith(matrix.client, 'rust-')
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            clients/target
+          key: ${{ runner.os }}-${{ matrix.client }}-cargo-${{ hashFiles('clients/**/Cargo.toml') }}
+
+      - name: Cache Python dependencies
+        if: startsWith(matrix.client, 'python-')
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cache/pip
+            clients/python/venv
+          key: ${{ runner.os }}-${{ matrix.client }}-python-${{ hashFiles('clients/python/requirements.txt') }}
+
+      - name: Build Rust client
+        if: startsWith(matrix.client, 'rust-')
+        run: |
+          cd clients
+          
+          case "${{ matrix.client }}" in
+            rust-cuda)
+              cargo build --release --features cuda 2>/dev/null || cargo build --release
+              ;;
+            rust-cudnn)
+              cargo build --release --features cudnn 2>/dev/null || cargo build --release
+              ;;
+            rust-metal)
+              cargo build --release --features metal 2>/dev/null || cargo build --release
+              ;;
+            *)
+              cargo build --release
+              ;;
+          esac
+
+      - name: Setup Python environment
+        if: startsWith(matrix.client, 'python-')
+        run: |
+          cd clients/python
+          
+          # Create virtual environment
+          python3 -m venv venv
+          source venv/bin/activate
+          pip install --upgrade pip
+          
+          # Install dependencies
+          if [[ -f "requirements.txt" ]]; then
+            pip install -r requirements.txt
+          fi
+          
+          # Install client-specific packages
+          case "${{ matrix.client }}" in
+            python-mlx)
+              if [[ -d "moshi_mlx" ]]; then
+                cd moshi_mlx
+                pip install -e .
+              fi
+              ;;
+            python-pytorch)
+              pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
+              ;;
+          esac
+
+      - name: Start moshi server
+        run: |
+          echo "Starting moshi server..."
+          
+          # Determine server binary path
+          if [[ "${{ matrix.client }}" == rust-* ]]; then
+            SERVER_CMD="clients/target/release/moshi-server"
+          else
+            # Use Rust server for Python clients too
+            SERVER_CMD="clients/target/release/moshi-server"
+          fi
+          
+          # Start server in background
+          $SERVER_CMD --config configs/${{ matrix.config }} --port 8998 > server.log 2>&1 &
+          SERVER_PID=$!
+          echo $SERVER_PID > server.pid
+          
+          # Wait for server to start
+          for i in {1..30}; do
+            if netstat -tuln 2>/dev/null | grep -q ":8998 "; then
+              echo "✅ Server started successfully"
+              break
+            fi
+            if [[ $i -eq 30 ]]; then
+              echo "❌ Server failed to start"
+              cat server.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+      - name: Run transcription test
+        id: transcription
+        run: |
+          echo "Running transcription test..."
+          
+          # Verify audio file exists
+          if [[ ! -f "audio/${{ matrix.audio }}" ]]; then
+            echo "❌ Audio file audio/${{ matrix.audio }} not found"
+            exit 1
+          fi
+          
+          # Determine client command
+          case "${{ matrix.client }}" in
+            rust-*)
+              CLIENT_CMD="clients/target/release/moshi-cli --server http://localhost:8998 --audio audio/${{ matrix.audio }}"
+              ;;
+            python-pytorch)
+              cd clients/python
+              source venv/bin/activate
+              CLIENT_CMD="python -m moshi.client --server http://localhost:8998 --audio ../../audio/${{ matrix.audio }}"
+              ;;
+            python-mlx)
+              cd clients/python
+              source venv/bin/activate  
+              CLIENT_CMD="python -m moshi_mlx.local --server http://localhost:8998 --audio ../../audio/${{ matrix.audio }}"
+              ;;
+          esac
+          
+          echo "Running: $CLIENT_CMD"
+          
+          # Run test with timeout
+          timeout 300 $CLIENT_CMD > transcription.log 2>&1 || {
+            exit_code=$?
+            echo "❌ Transcription failed with exit code: $exit_code"
+            echo "test_result=failed" >> $GITHUB_OUTPUT
+            cat transcription.log
+            exit $exit_code
+          }
+          
+          echo "✅ Transcription completed successfully"
+          echo "test_result=success" >> $GITHUB_OUTPUT
+
+      - name: Collect results
+        if: always()
+        run: |
+          mkdir -p results
+          
+          # Create result JSON
+          cat > results/result.json << EOF
+          {
+            "test_id": "${{ matrix.client }}_${{ matrix.config }}_${{ matrix.audio }}",
+            "timestamp": "$(date -Iseconds)",
+            "client_type": "${{ matrix.client }}",
+            "config_file": "${{ matrix.config }}",
+            "audio_file": "${{ matrix.audio }}",
+            "status": "${{ steps.transcription.outputs.test_result || 'failed' }}",
+            "runner_os": "${{ runner.os }}",
+            "workflow_run": "${{ github.run_number }}"
+          }
+          EOF
+          
+          # Copy logs
+          cp server.log results/ 2>/dev/null || true
+          cp transcription.log results/ 2>/dev/null || true
+
+      - name: Stop server
+        if: always()
+        run: |
+          if [[ -f server.pid ]]; then
+            SERVER_PID=$(cat server.pid)
+            kill $SERVER_PID 2>/dev/null || true
+            rm server.pid
+          fi
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: results-${{ matrix.client }}-${{ matrix.config }}-${{ matrix.audio }}
+          path: results/
+          retention-days: ${{ env.RESULTS_RETENTION_DAYS }}
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf /tmp/moshi /tmp/delayed-streams
+
+  summary:
+    name: Test Results Summary
+    runs-on: ubuntu-latest
+    needs: test
+    if: always()
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: results-*
+          path: all-results/
+          merge-multiple: true
+
+      - name: Generate summary
+        run: |
+          echo "# 🧪 Moshi Test Matrix Results" > summary.md
+          echo "Generated: $(date -Iseconds)" >> summary.md
+          echo "" >> summary.md
+          
+          # Count results
+          total=$(find all-results -name "result.json" | wc -l)
+          success=$(grep -l '"status": "success"' all-results/*/result.json 2>/dev/null | wc -l)
+          failed=$((total - success))
+          
+          echo "- **Total tests**: $total" >> summary.md
+          echo "- **Successful**: $success ✅" >> summary.md
+          echo "- **Failed**: $failed ❌" >> summary.md
+          echo "" >> summary.md
+          
+          if [[ $failed -eq 0 && $total -gt 0 ]]; then
+            echo "🎉 **All tests passed!**" >> summary.md
+            echo "OVERALL_STATUS=success" >> $GITHUB_ENV
+          else
+            echo "💥 **Some tests failed**" >> summary.md
+            echo "OVERALL_STATUS=failed" >> $GITHUB_ENV
+            
+            echo "" >> summary.md
+            echo "## Failed Tests" >> summary.md
+            for result in all-results/*/result.json; do
+              if grep -q '"status": "failed"' "$result"; then
+                test_id=$(jq -r '.test_id' "$result" 2>/dev/null || echo "unknown")
+                echo "- ❌ $test_id" >> summary.md
+              fi
+            done
+          fi
+          
+          echo "" >> summary.md
+          echo "**Workflow**: [Run #${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> summary.md
+
+      - name: Upload summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-summary
+          path: summary.md
+          retention-days: ${{ env.RESULTS_RETENTION_DAYS }}
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('summary.md', 'utf8');
+            
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: summary
+            });
+
+      - name: Set final status
+        run: |
+          if [[ "$OVERALL_STATUS" == "success" ]]; then
+            echo "✅ All tests passed!"
+            exit 0
+          else
+            echo "❌ Some tests failed!"
+            exit 1
+          fi

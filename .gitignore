@@ -1,0 +1,35 @@
+# Temporary directories created by workflows or local testing
+clients/
+configs/
+results/
+
+# Act artifacts
+/tmp/act-artifacts/
+
+# Build artifacts
+target/
+*.log
+*.pid
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Secrets (if any)
+.env.local
+secrets.json
+
+# Working file
+ACTION_PLAN.md

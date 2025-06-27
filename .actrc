@@ -1,0 +1,19 @@
+# Act Configuration for Moshi Test Matrix
+# https://github.com/nektos/act
+
+# Use lighter runner images for faster startup
+-P ubuntu-latest=catthehacker/ubuntu:act-latest
+-P macos-latest=catthehacker/ubuntu:act-latest
+
+# Enable verbose output by default for debugging
+# -v
+
+# Set default environment variables
+--env CI=true
+--env GITHUB_ACTIONS=true
+
+# Container architecture for Apple Silicon
+--container-architecture linux/amd64
+
+# Artifact directory
+--artifact-server-path /tmp/act-artifacts--env DOCKER_HOST=unix:///var/folders/j9/bnfyqnns4tzccm9jnvrxzx100000gn/T/podman/podman-machine-default-api.sock
